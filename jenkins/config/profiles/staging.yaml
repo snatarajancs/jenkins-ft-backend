@@ -1,21 +1,23 @@
 registry:
   type: harbor
   url: harbor.demotechhub.xyz
-  namespace: jenkins-pipeline-poc-github-app
+  namespace: ft-backend
 
 deployment:
   type: docker-compose
 
 target:
   type: server
-  host: stage-app01.company.internal
+  host: app-host-01
   port: 22
 
 application:
-  path: /opt/apps/jenkins-pipeline-poc-github-app
+  path: /data/apps/ft/stage
   compose_file: compose.yml
   deploy_script: deploy/deploy.sh
   rollback_script: deploy/rollback.sh
+  health_check_script: deploy/health-check.sh
+
 
 health_check:
   enabled: true

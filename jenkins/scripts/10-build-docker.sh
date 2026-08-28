@@ -16,7 +16,7 @@
 #   ${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${REPOSITORY}:${ENVIRONMENT}-${GIT_SHA}
 #
 # Example:
-#   registry.company.com/jenkins-pipeline-poc-github-app/backend:stage-8f31a42
+#   registry.company.com/ft-backend/backend:stage-8f31a42
 #
 ###############################################################################
 
@@ -149,7 +149,7 @@ build_component_image() {
     #   registry:
     #     type: harbor
     #     url: registry.company.com
-    #     namespace: jenkins-pipeline-poc-github-app
+    #     namespace: ft-backend
     #
     # This replaces the old Jenkins DOCKER_REGISTRY dependency.
     ###########################################################################

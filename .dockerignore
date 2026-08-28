@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build/cache
+dist
+build
+.cache
+.tmp
+*.tsbuildinfo
+
+# IDE / editor
+.vscode
+.idea
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+docker-compose.yml
+
+# CI/CD
+jenkins
+Jenkinsfile
