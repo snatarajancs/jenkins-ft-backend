@@ -1,0 +1,7 @@
+{
+  "backend": {
+    "repository": "backend",
+    "tag": "stage-ea7c95f",
+    "image_id": "sha256:51d4ddea36fcf3058b71270926d170ddc87a4598bf957da7a7c0facc724108a4"
+  }
+}

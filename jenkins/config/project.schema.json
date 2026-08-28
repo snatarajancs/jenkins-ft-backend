@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/schemas/project.schema.json",
+  "title": "Universal Jenkins Pipeline Configuration",
+  "description": "Stable configuration contract for the Jenkins pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+
+  "required": [
+    "schema_version",
+    "project",
+    "components",
+    "environments"
+  ],
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+
+      "required": [
+        "name",
+        "type"
+      ],
+
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+
+        "type": {
+          "type": "string",
+          "enum": [
+            "service",
+            "website",
+            "worker",
+            "library",
+            "cli"
+          ]
+        }
+      }
+    },
+
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+
+        "required": [
+          "language",
+          "source"
+        ],
+
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": [
+              "go",
+              "nodejs",
+              "python",
+              "java",
+              "dotnet",
+              "php",
+              "rust",
+              "static"
+            ]
+          },
+
+          "runtime": {
+            "type": "string",
+            "minLength": 1
+          },
+
+          "framework": {
+            "type": "string",
+            "minLength": 1
+          },
+
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+
+          "depends_on": {
+            "type": "array",
+            "uniqueItems": true,
+
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+
+          "build": {
+            "type": "object",
+            "additionalProperties": false,
+
+            "required": [
+              "tool"
+            ],
+
+            "properties": {
+              "tool": {
+                "type": "string",
+                "enum": [
+                  "go",
+                  "npm",
+                  "pnpm",
+                  "yarn",
+                  "bun",
+                  "maven",
+                  "gradle",
+                  "pip",
+                  "poetry"
+                ]
+              },
+
+              "artifact_directory": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+
+          "testing": {
+            "type": "object",
+            "additionalProperties": false,
+
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+
+              "unit": {
+                "type": "object",
+                "additionalProperties": false,
+
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "script": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "script"
+                ]
+              },
+
+              "e2e": {
+                "type": "object",
+                "additionalProperties": false,
+
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+
+                  "script": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+
+          "container": {
+            "type": "object",
+            "additionalProperties": false,
+
+            "required": [
+              "repository",
+              "dockerfile",
+              "context"
+            ],
+
+            "properties": {
+              "repository": {
+                "type": "string",
+                "minLength": 1
+              },
+
+              "dockerfile": {
+                "type": "string",
+                "minLength": 1
+              },
+
+              "context": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+
+          "deployment": {
+            "type": "object",
+            "additionalProperties": false,
+
+            "required": [
+              "strategy"
+            ],
+
+            "properties": {
+              "target": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "compose",
+                  "ecs",
+                  "s3"
+                ]
+              },
+
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "rolling",
+                  "blue-green",
+                  "replace"
+                ]
+              },
+
+              "host": {
+                "type": "string",
+                "minLength": 1
+              },
+
+              "script": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+
+          "health_check": {
+            "type": "object",
+            "additionalProperties": false,
+
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+
+              "target": {
+                "type": "string",
+                "enum": [
+                  "compose",
+                  "ecs",
+                  "s3"
+                ]
+              },
+
+              "url": {
+                "type": "string",
+                "minLength": 1
+              },
+
+              "timeout": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+"environments": {
+  "type": "object",
+
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+
+    "required": [
+      "branch",
+      "profile",
+      "allow_pr_deploy"
+    ],
+
+    "properties": {
+      "branch": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+
+      "profile": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+
+      "allow_pr_deploy": {
+        "type": "boolean"
+      }
+    }
+  }
+}
+  }
+}

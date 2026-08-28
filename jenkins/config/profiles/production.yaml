@@ -1,0 +1,18 @@
+registry:
+  type: ecr
+  url: 123456789012.dkr.ecr.ap-south-1.amazonaws.com
+  namespace: jenkins-pipeline-poc-github-app
+  aws_region: ap-south-1
+
+deployment:
+  type: ecs
+
+target:
+  type: ecs
+  cluster: jenkins-pipeline-poc-github-app-prod
+  service: backend
+
+health_check:
+  enabled: true
+  target: ecs
+  timeout: 120

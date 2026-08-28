@@ -1,0 +1,9 @@
+{
+  "build_type": "branch",
+  "branch": "stage",
+  "target_branch": "N/A",
+  "tag": "N/A",
+  "routing_branch": "stage",
+  "environment": "stage",
+  "profile": "staging"
+}

@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "name": "jenkins-pipeline-poc-github-app",
+    "type": "service"
+  },
+  "components": {
+    "backend": {
+      "language": "nodejs",
+      "framework": "express",
+      "runtime": "22",
+      "source": "backend",
+
+      "build": {
+        "tool": "npm"
+      },
+
+      "testing": {
+        "unit": {
+          "enabled": true,
+          "script": "npm test"
+        },
+        "e2e": {
+          "enabled": true,
+          "script": "npm run test:e2e"
+        }
+      },
+
+      "container": {
+        "repository": "backend",
+        "dockerfile": "Dockerfile",
+        "context": "."
+      },
+
+      "deployment": {
+        "strategy": "replace"
+      },
+
+      "health_check": {
+        "enabled": true,
+        "target": "compose",
+        "timeout": 180
+      }
+    }
+  },
+
+  "environments": {
+    "dev": {
+      "branch": "dev",
+      "profile": "development",
+      "allow_pr_deploy": true
+    },
+
+    "stage": {
+      "branch": "stage",
+      "profile": "staging",
+      "allow_pr_deploy": true
+    },
+
+    "prod": {
+      "branch": "main",
+      "profile": "production",
+      "allow_pr_deploy": false
+    }
+  }
+}

@@ -1,0 +1,23 @@
+registry:
+  type: harbor
+  url: harbor.demotechhub.xyz
+  namespace: jenkins-pipeline-poc-github-app
+
+deployment:
+  type: docker-compose
+
+target:
+  type: server
+  host: stage-app01.company.internal
+  port: 22
+
+application:
+  path: /opt/apps/jenkins-pipeline-poc-github-app
+  compose_file: compose.yml
+  deploy_script: deploy/deploy.sh
+  rollback_script: deploy/rollback.sh
+
+health_check:
+  enabled: true
+  target: compose
+  timeout: 180

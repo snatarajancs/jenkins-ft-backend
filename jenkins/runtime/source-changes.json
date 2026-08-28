@@ -1,0 +1,27 @@
+{
+  "base_commit": "origin/main",
+  "current_commit": "ea7c95fb336663e609b707879a1efa3c5078f758",
+  "changed_components": [
+    "backend"
+  ],
+  "changed_files": [
+    "backend/.dockerignore",
+    "backend/.env.example",
+    "backend/.gitignore",
+    "backend/Dockerfile",
+    "backend/app.js",
+    "backend/e2e/health.e2e.test.js",
+    "backend/eslint.config.js",
+    "backend/eslint.config.mjs",
+    "backend/jest.config.js",
+    "backend/junit.xml",
+    "backend/package-lock.json",
+    "backend/package.json",
+    "backend/server.js",
+    "backend/src/app.js",
+    "backend/src/server.js",
+    "backend/tests/app.test.js"
+  ],
+  "changed_component_count": 1,
+  "changes_detected": true
+}
