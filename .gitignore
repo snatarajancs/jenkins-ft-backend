@@ -1,0 +1,14 @@
+node_modules/
+dist/
+docs/book/
+openapi.json
+e2e/client/
+.env
+.env.production
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
