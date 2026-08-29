@@ -258,6 +258,11 @@ pipeline {
 
             steps {
                 withCredentials([
+                    usernamePassword(
+                        credentialsId: 'harbor-jenkins-ft-backend',
+                        usernameVariable: 'REGISTRY_USERNAME',
+                        passwordVariable: 'REGISTRY_PASSWORD'
+                    ),
                     sshUserPrivateKey(
                         credentialsId: 'deployment-ssh',
                         keyFileVariable: 'DEPLOY_SSH_KEY',
