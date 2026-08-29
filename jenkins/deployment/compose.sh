@@ -174,6 +174,19 @@ deployment_compose() {
     ###########################################################################
 
     log_info "Validating remote deployment files..."
+    log_info "Remote execution identity..."
+    ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "whoami && id"
+        
+    log_info "Remote deploy script permissions..."
+    
+    ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "ls -ld '${app_path}/deploy' && \
+         ls -l '${app_path}/${deploy_script}' && \
+         test -x '${app_path}/${deploy_script}' && \
+         echo 'EXECUTABLE=YES'"
     
     if ! ssh "${ssh_options[@]}" \
         "${ssh_target}" \
