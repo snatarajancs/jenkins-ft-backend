@@ -37,7 +37,7 @@
       },
 
       "health_check": {
-        "enabled": true,
+        "enabled": false,
         "target": "compose",
         "timeout": 180
       }
