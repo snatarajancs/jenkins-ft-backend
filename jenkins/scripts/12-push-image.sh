@@ -79,10 +79,10 @@ push_images() {
     ###########################################################################
     # Read components from Docker image metadata
     ###########################################################################
-
+    
     components="$(
         jq -er 'keys[]' "${IMAGE_METADATA_FILE}"
-    )"
+    )" || die "Failed to read Docker image metadata."
 
     ###########################################################################
     # Push each built image
@@ -94,24 +94,18 @@ push_images() {
         [[ -n "${component}" ]] || continue
 
         repository="$(
-            runtime_get_image \
-                "${component}" \
-                repository
-        )"
+            runtime_get_image "${component}" repository
+        )" || die "${component}: Failed to read image repository."
 
         tag="$(
-            runtime_get_image \
-                "${component}" \
-                tag
-        )"
+            runtime_get_image "${component}" tag
+        )" || die "${component}: Failed to read image tag."
 
-        if [[ -z "${repository}" ]]; then
+        [[ -n "${repository}" ]] ||
             die "${component}: Repository is empty."
-        fi
 
-        if [[ -z "${tag}" ]]; then
+        [[ -n "${tag}" ]] ||
             die "${component}: Image tag is empty."
-        fi
 
         log_info "Preparing image push..."
         log_info "Component  : ${component}"
@@ -128,11 +122,10 @@ push_images() {
 
         pushed_count=$((pushed_count + 1))
 
-        log_success \
-            "${component}: Image pushed successfully."
+        log_success "${component}: Image pushed successfully."
 
     done <<< "${components}"
-
+    
     ###########################################################################
     # Safety check
     ###########################################################################
@@ -166,6 +159,7 @@ main() {
     ###########################################################################
 
     registry_load_profile
+
 
     ###########################################################################
     # Login
