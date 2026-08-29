@@ -26,6 +26,10 @@ deployment_compose() {
 
     local component="$1"
 
+    ###########################################################################
+    # Variables
+    ###########################################################################
+
     local profile
     local profile_file
 
@@ -52,7 +56,7 @@ deployment_compose() {
     require_command yq
 
     ###########################################################################
-    # Jenkins SSH credentials
+    # Required Jenkins credentials/files
     ###########################################################################
 
     : "${DEPLOY_SSH_USER:?DEPLOY_SSH_USER must be supplied by Jenkins}"
@@ -64,82 +68,103 @@ deployment_compose() {
     require_file "${PIPELINE_CONTEXT_FILE}"
 
     ###########################################################################
-    # Runtime image metadata
-    ###########################################################################
-
-    if ! runtime_has_image "${component}"; then
-        die "${component}: No Docker image metadata found."
-    fi
-
-    ###########################################################################
-    # Resolve active deployment profile
+    # Resolve deployment profile
     ###########################################################################
 
     profile="$(
         json_get \
             "${PIPELINE_CONTEXT_FILE}" \
             ".profile"
-    )"
+    )" || die "${component}: Failed to extract deployment profile."
 
-    if [[ -z "${profile}" || "${profile}" == "none" ]]; then
+    if [[ -z "${profile}" ||
+          "${profile}" == "none" ||
+          "${profile}" == "null" ]]; then
+
         die "${component}: Deployment profile is not available."
     fi
 
     profile_file="${JENKINS_DIR}/config/profiles/${profile}.yaml"
 
-    if [[ ! -f "${profile_file}" ]]; then
-        die "${component}: Profile file not found: ${profile_file}"
+    require_file "${profile_file}"
+
+    ###########################################################################
+    # Resolve deployment configuration
+    ###########################################################################
+
+    host="$(
+        yq -er '.target.host' \
+            "${profile_file}"
+    )" || die "${component}: Missing target.host."
+
+    port="$(
+        yq -er '.target.port // 22' \
+            "${profile_file}"
+    )" || die "${component}: Missing target.port."
+
+    app_path="$(
+        yq -er '.application.path' \
+            "${profile_file}"
+    )" || die "${component}: Missing application.path."
+
+    compose_file="$(
+        yq -er '.application.compose_file' \
+            "${profile_file}"
+    )" || die "${component}: Missing application.compose_file."
+
+    deploy_script="$(
+        yq -er '.application.deploy_script' \
+            "${profile_file}"
+    )" || die "${component}: Missing application.deploy_script."
+
+    ###########################################################################
+    # Resolve registry configuration
+    ###########################################################################
+
+    registry_url="$(
+        yq -er '.registry.url' \
+            "${profile_file}"
+    )" || die "${component}: Missing registry.url."
+
+    registry_namespace="$(
+        yq -er '.registry.namespace' \
+            "${profile_file}"
+    )" || die "${component}: Missing registry.namespace."
+
+    ###########################################################################
+    # Resolve runtime Docker image
+    ###########################################################################
+
+    if ! runtime_has_image "${component}"; then
+        die "${component}: No Docker image metadata found."
     fi
 
-    ###########################################################################
-    # Deployment configuration
-    ###########################################################################
+    repository="$(
+        runtime_get_image \
+            "${component}" \
+            repository
+    )" || die "${component}: Failed to resolve image repository."
 
-    host="$(yq -er '.target.host' "${profile_file}")" \
-        || die "${component}: Missing target.host."
+    tag="$(
+        runtime_get_image \
+            "${component}" \
+            tag
+    )" || die "${component}: Failed to resolve image tag."
 
-    port="$(yq -er '.target.port // 22' "${profile_file}")" \
-        || die "${component}: Missing target.port."
+    [[ -n "${repository}" ]] ||
+        die "${component}: Image repository is empty."
 
-    app_path="$(yq -er '.application.path' "${profile_file}")" \
-        || die "${component}: Missing application.path."
-
-    compose_file="$(yq -er '.application.compose_file' "${profile_file}")" \
-        || die "${component}: Missing application.compose_file."
-
-    deploy_script="$(yq -er '.application.deploy_script' "${profile_file}")" \
-        || die "${component}: Missing application.deploy_script."
-
-    ###########################################################################
-    # Registry configuration
-    ###########################################################################
-
-    registry_url="$(yq -er '.registry.url' "${profile_file}")" \
-        || die "${component}: Missing registry.url."
-
-    registry_namespace="$(yq -er '.registry.namespace' "${profile_file}")" \
-        || die "${component}: Missing registry.namespace."
+    [[ -n "${tag}" ]] ||
+        die "${component}: Image tag is empty."
 
     ###########################################################################
-    # Runtime repository + exact tag
+    # Build exact Docker image reference
     ###########################################################################
-
-    repository="$(runtime_get_image "${component}" repository)" \
-        || die "${component}: Failed to resolve image repository."
-
-    tag="$(runtime_get_image "${component}" tag)" \
-        || die "${component}: Failed to resolve image tag."
-
-    [[ -n "${repository}" ]] \
-        || die "${component}: Image repository is empty."
-
-    [[ -n "${tag}" ]] \
-        || die "${component}: Image tag is empty."
 
     image_ref="${registry_url}/${registry_namespace}/${repository}:${tag}"
 
     ###########################################################################
-    # Display
+    # Deployment information
     ###########################################################################
 
     log_info "Deploying '${component}'..."
@@ -174,58 +199,50 @@ deployment_compose() {
     ###########################################################################
 
     log_info "Validating remote deployment files..."
-    log_info "Remote execution identity..."
-    ssh "${ssh_options[@]}" \
-        "${ssh_target}" \
-        "whoami && id"
-        
-    log_info "Remote deploy script permissions..."
-    
-    ssh "${ssh_options[@]}" \
-        "${ssh_target}" \
-        "ls -ld '${app_path}/deploy' && \
-         ls -l '${app_path}/${deploy_script}' && \
-         test -x '${app_path}/${deploy_script}' && \
-         echo 'EXECUTABLE=YES'"
-    
+
+    local validation_command
+
+    validation_command="
+        test -d '${app_path}' ||
+            {
+                echo 'ERROR: Application directory not found: ${app_path}'
+                exit 10
+            }
+
+        test -f '${app_path}/${compose_file}' ||
+            {
+                echo 'ERROR: Compose file not found: ${app_path}/${compose_file}'
+                exit 11
+            }
+
+        test -x '${app_path}/${deploy_script}' ||
+            {
+                echo 'ERROR: Deploy script missing or not executable: ${app_path}/${deploy_script}'
+                exit 12
+            }
+    "
+
     if ! ssh "${ssh_options[@]}" \
         "${ssh_target}" \
-        "test -d '${app_path}'"
+        "${validation_command}"
     then
-        die "${component}: Remote application directory not found: ${app_path}"
+        die "${component}: Remote deployment validation failed."
     fi
-    
-    if ! ssh "${ssh_options[@]}" \
-        "${ssh_target}" \
-        "test -f '${app_path}/${compose_file}'"
-    then
-        die "${component}: Remote Compose file not found: ${app_path}/${compose_file}"
-    fi
-    
-    if ! ssh "${ssh_options[@]}" \
-        "${ssh_target}" \
-        "test -f '${app_path}/${deploy_script}'"
-    then
-        die "${component}: Remote deploy script not found: ${app_path}/${deploy_script}"
-    fi
-    
-    if ! ssh "${ssh_options[@]}" \
-        "${ssh_target}" \
-        "test -x '${app_path}/${deploy_script}'"
-    then
-        die "${component}: Remote deploy script is not executable: ${app_path}/${deploy_script}"
-    fi
-    
-    log_success "${component}: Remote deployment files validated."
+
+    log_success \
+        "${component}: Remote deployment files validated."
 
     ###########################################################################
-    # Deploy
+    # Execute remote deployment
     #
-    # App Server deploy.sh handles:
-    #   - image pull
-    #   - application start
-    #   - health verification
-    #   - rollback on failure
+    # deploy.sh on the application server handles:
+    #   - Harbor login
+    #   - Docker image pull
+    #   - Docker Compose deployment
+    #   - Health verification
+    #   - Rollback on failure
+    #   - Harbor logout
+    #
     ###########################################################################
 
     log_info "Executing remote deployment..."
@@ -249,5 +266,6 @@ deployment_compose() {
     # Success
     ###########################################################################
 
-    log_success "${component}: Docker Compose deployment completed successfully."
+    log_success \
+        "${component}: Docker Compose deployment completed successfully."
 }
