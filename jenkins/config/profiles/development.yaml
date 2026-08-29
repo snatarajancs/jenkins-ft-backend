@@ -12,7 +12,7 @@ target:
   port: 22
 
 application:
-  path: /data/apps/ft/
+  path: /data/apps/test/dev/
   compose_file: compose.yml
   deploy_script: deploy/deploy.sh
   rollback_script: deploy/rollback.sh
