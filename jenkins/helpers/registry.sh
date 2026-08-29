@@ -37,9 +37,9 @@ registry_load_profile() {
     profile="$(
         jq -er '.profile' \
             "${JENKINS_DIR}/runtime/pipeline-context.json"
-    )"
+    )" || die "Failed to read deployment profile."
 
-    if [[ -z "${profile}" || "${profile}" == "none" ]]; then
+    if [[ -z "${profile}" || "${profile}" == "none" || "${profile}" == "null" ]]; then
         die "Deployment profile is not available."
     fi
 
@@ -51,26 +51,22 @@ registry_load_profile() {
 
     REGISTRY_TYPE="$(
         yq -er '.registry.type' "${profile_file}"
-    )"
+    )" || die "Missing registry.type."
 
     REGISTRY_URL="$(
         yq -er '.registry.url' "${profile_file}"
-    )"
+    )" || die "Missing registry.url."
 
     REGISTRY_NAMESPACE="$(
         yq -er '.registry.namespace' "${profile_file}"
-    )"
+    )" || die "Missing registry.namespace."
 
     if [[ "${REGISTRY_TYPE}" == "ecr" ]]; then
-
         AWS_REGION="$(
             yq -er '.registry.aws_region' "${profile_file}"
-        )"
-
+        )" || die "Missing registry.aws_region."
     else
-
         AWS_REGION=""
-
     fi
 
     export REGISTRY_TYPE
@@ -84,6 +80,31 @@ registry_load_profile() {
     log_info "Registry URL      : ${REGISTRY_URL}"
     log_info "Registry Namespace: ${REGISTRY_NAMESPACE}"
 }
+
+###############################################################################
+# Build Exact Image Reference
+###############################################################################
+
+registry_image_ref() {
+
+    local repository="$1"
+    local tag="$2"
+
+    [[ -n "${repository}" ]] ||
+        die "Registry repository is empty."
+
+    [[ -n "${tag}" ]] ||
+        die "Registry image tag is empty."
+
+    printf '%s/%s/%s:%s' \
+        "${REGISTRY_URL}" \
+        "${REGISTRY_NAMESPACE}" \
+        "${repository}" \
+        "${tag}"
+        
+}
+
+
 
 ###############################################################################
 # Registry Login
@@ -138,7 +159,7 @@ registry_push() {
 
     local image
 
-    image="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${repository}:${tag}"
+    image="$(registry_image_ref "${repository}" "${tag}")"
 
     log_info "Pushing image..."
     log_info "Registry    : ${REGISTRY_URL}"
@@ -156,21 +177,13 @@ registry_push() {
 
 registry_logout() {
 
-    case "${REGISTRY_TYPE:-}" in
+    if [[ -z "${REGISTRY_URL:-}" ]]; then
+        log_warn "Registry URL is not available. Skipping logout."
+        return 0
+    fi
 
-        harbor|dockerhub|ecr)
-
-            docker logout "${REGISTRY_URL}" >/dev/null 2>&1 ||
-                return 1
-            ;;
-
-        *)
-
-            log_warn "Registry logout not implemented for type: ${REGISTRY_TYPE}"
-            return 1
-            ;;
-
-    esac
+    docker logout "${REGISTRY_URL}" >/dev/null 2>&1 ||
+        return 1
 
     log_success "Registry logout successful."
 }
