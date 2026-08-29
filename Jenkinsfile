@@ -103,6 +103,8 @@ pipeline {
         // Install dependencies required by application build and validation.
         stage('Install Dependencies') {
             steps {
+                sh "ls -la"
+                sh "pwd"
                 sh "bash ${JENKINS_DIR}/scripts/05-install-dependencies.sh"
             }
         }
