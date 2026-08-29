@@ -9,7 +9,7 @@
       "language": "nodejs",
       "framework": "express",
       "runtime": "22",
-      "source": "backend",
+      "source": ".",
 
       "build": {
         "tool": "npm"
