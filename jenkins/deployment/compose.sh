@@ -259,10 +259,10 @@ deployment_compose() {
         "${registry_url}" \
         "${deploy_script}"
 
-    if ! printf '%s\n%s\n' \
-        "${REGISTRY_USERNAME}" \
-        "${REGISTRY_PASSWORD}" |
-        ssh "${ssh_options[@]}" \
+    if ! {
+        printf '%s\n' "${REGISTRY_USERNAME}"
+        printf '%s\n' "${REGISTRY_PASSWORD}"
+    } | ssh "${ssh_options[@]}" \
             "${ssh_target}" \
             "${remote_command}"
     then
