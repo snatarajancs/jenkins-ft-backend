@@ -63,6 +63,9 @@ deployment_compose() {
     : "${DEPLOY_SSH_KEY:?DEPLOY_SSH_KEY must be supplied by Jenkins}"
     : "${KNOWN_HOSTS_FILE:?KNOWN_HOSTS_FILE must be supplied by Jenkins}"
 
+    : "${REGISTRY_USERNAME:?REGISTRY_USERNAME must be supplied by Jenkins}"
+    : "${REGISTRY_PASSWORD:?REGISTRY_PASSWORD must be supplied by Jenkins}"
+
     require_file "${DEPLOY_SSH_KEY}"
     require_file "${KNOWN_HOSTS_FILE}"
     require_file "${PIPELINE_CONTEXT_FILE}"
@@ -250,14 +253,18 @@ deployment_compose() {
     local remote_command
 
     printf -v remote_command \
-        "cd %q && IMAGE=%q %q" \
+        "cd %q && IMAGE=%q REGISTRY_URL=%q ./%q" \
         "${app_path}" \
         "${image_ref}" \
-        "./${deploy_script}"
+        "${registry_url}" \
+        "${deploy_script}"
 
-    if ! ssh "${ssh_options[@]}" \
-        "${ssh_target}" \
-        "${remote_command}"
+    if ! printf '%s\n%s\n' \
+        "${REGISTRY_USERNAME}" \
+        "${REGISTRY_PASSWORD}" |
+        ssh "${ssh_options[@]}" \
+            "${ssh_target}" \
+            "${remote_command}"
     then
         die "${component}: Remote deployment failed."
     fi
