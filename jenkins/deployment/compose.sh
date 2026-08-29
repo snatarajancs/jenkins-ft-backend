@@ -10,7 +10,9 @@
 #   - Read environment profile
 #   - Read built image metadata
 #   - Build the exact registry image reference
-#   - Execute remote deployment script on application server
+#   - Validate remote deployment requirements
+#   - Execute remote deployment script
+#   - Report deployment failures clearly
 #
 ###############################################################################
 
@@ -57,6 +59,10 @@ deployment_compose() {
     : "${DEPLOY_SSH_KEY:?DEPLOY_SSH_KEY must be supplied by Jenkins}"
     : "${KNOWN_HOSTS_FILE:?KNOWN_HOSTS_FILE must be supplied by Jenkins}"
 
+    require_file "${DEPLOY_SSH_KEY}"
+    require_file "${KNOWN_HOSTS_FILE}"
+    require_file "${PIPELINE_CONTEXT_FILE}"
+
     ###########################################################################
     # Runtime image metadata
     ###########################################################################
@@ -89,49 +95,46 @@ deployment_compose() {
     # Deployment configuration
     ###########################################################################
 
-    host="$(
-        yq -er '.target.host' "${profile_file}"
-    )"
+    host="$(yq -er '.target.host' "${profile_file}")" \
+        || die "${component}: Missing target.host."
 
-    port="$(
-        yq -er '.target.port // 22' "${profile_file}"
-    )"
+    port="$(yq -er '.target.port // 22' "${profile_file}")" \
+        || die "${component}: Missing target.port."
 
-    app_path="$(
-        yq -er '.application.path' "${profile_file}"
-    )"
+    app_path="$(yq -er '.application.path' "${profile_file}")" \
+        || die "${component}: Missing application.path."
 
-    compose_file="$(
-        yq -er '.application.compose_file' "${profile_file}"
-    )"
+    compose_file="$(yq -er '.application.compose_file' "${profile_file}")" \
+        || die "${component}: Missing application.compose_file."
 
-    deploy_script="$(
-        yq -er '.application.deploy_script' "${profile_file}"
-    )"
+    deploy_script="$(yq -er '.application.deploy_script' "${profile_file}")" \
+        || die "${component}: Missing application.deploy_script."
 
     ###########################################################################
     # Registry configuration
     ###########################################################################
 
-    registry_url="$(
-        yq -er '.registry.url' "${profile_file}"
-    )"
+    registry_url="$(yq -er '.registry.url' "${profile_file}")" \
+        || die "${component}: Missing registry.url."
 
-    registry_namespace="$(
-        yq -er '.registry.namespace' "${profile_file}"
-    )"
+    registry_namespace="$(yq -er '.registry.namespace' "${profile_file}")" \
+        || die "${component}: Missing registry.namespace."
 
     ###########################################################################
     # Runtime repository + exact tag
     ###########################################################################
 
-    repository="$(
-        runtime_get_image "${component}" repository
-    )"
+    repository="$(runtime_get_image "${component}" repository)" \
+        || die "${component}: Failed to resolve image repository."
 
-    tag="$(
-        runtime_get_image "${component}" tag
-    )"
+    tag="$(runtime_get_image "${component}" tag)" \
+        || die "${component}: Failed to resolve image tag."
+
+    [[ -n "${repository}" ]] \
+        || die "${component}: Image repository is empty."
+
+    [[ -n "${tag}" ]] \
+        || die "${component}: Image tag is empty."
 
     image_ref="${registry_url}/${registry_namespace}/${repository}:${tag}"
 
@@ -149,21 +152,49 @@ deployment_compose() {
     log_info "Image      : ${image_ref}"
 
     ###########################################################################
+    # SSH configuration
+    ###########################################################################
+
+    local ssh_target="${DEPLOY_SSH_USER}@${host}"
+
+    local -a ssh_options=(
+        -i "${DEPLOY_SSH_KEY}"
+        -p "${port}"
+        -o IdentitiesOnly=yes
+        -o "UserKnownHostsFile=${KNOWN_HOSTS_FILE}"
+        -o StrictHostKeyChecking=yes
+        -o ConnectTimeout=10
+        -o BatchMode=yes
+        -o ServerAliveInterval=30
+        -o ServerAliveCountMax=3
+    )
+
+    ###########################################################################
     # Validate remote deployment files
     ###########################################################################
 
     log_info "Validating remote deployment files..."
 
-    ssh \
-        -i "${DEPLOY_SSH_KEY}" \
-        -p "${port}" \
-        -o IdentitiesOnly=yes \
-        -o "UserKnownHostsFile=${KNOWN_HOSTS_FILE}" \
-        -o StrictHostKeyChecking=yes \
-        "${DEPLOY_SSH_USER}@${host}" \
-        "test -d '${app_path}' && \
-         test -f '${app_path}/${compose_file}' && \
-         test -x '${app_path}/${deploy_script}'"
+    local validation_command
+    validation_command="
+        test -d '${app_path}' ||
+            { echo 'ERROR: Application directory not found: ${app_path}'; exit 10; }
+
+        test -f '${app_path}/${compose_file}' ||
+            { echo 'ERROR: Compose file not found: ${app_path}/${compose_file}'; exit 11; }
+
+        test -x '${app_path}/${deploy_script}' ||
+            { echo 'ERROR: Deploy script missing or not executable: ${app_path}/${deploy_script}'; exit 12; }
+    "
+
+    if ! ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "${validation_command}"
+    then
+        die "${component}: Remote deployment validation failed."
+    fi
+
+    log_success "${component}: Remote deployment files validated."
 
     ###########################################################################
     # Deploy
@@ -175,15 +206,26 @@ deployment_compose() {
     #   - rollback on failure
     ###########################################################################
 
-    ssh \
-        -i "${DEPLOY_SSH_KEY}" \
-        -p "${port}" \
-        -o IdentitiesOnly=yes \
-        -o "UserKnownHostsFile=${KNOWN_HOSTS_FILE}" \
-        -o StrictHostKeyChecking=yes \
-        "${DEPLOY_SSH_USER}@${host}" \
-        "cd '${app_path}' && \
-        IMAGE='${image_ref}' './${deploy_script}'"
+    log_info "Executing remote deployment..."
 
-    log_success "${component}: Docker Compose deployment completed."
+    local remote_command
+
+    printf -v remote_command \
+        "cd %q && IMAGE=%q %q" \
+        "${app_path}" \
+        "${image_ref}" \
+        "./${deploy_script}"
+
+    if ! ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "${remote_command}"
+    then
+        die "${component}: Remote deployment failed."
+    fi
+
+    ###########################################################################
+    # Success
+    ###########################################################################
+
+    log_success "${component}: Docker Compose deployment completed successfully."
 }
