@@ -174,26 +174,35 @@ deployment_compose() {
     ###########################################################################
 
     log_info "Validating remote deployment files..."
-
-    local validation_command
-    validation_command="
-        test -d '${app_path}' ||
-            { echo 'ERROR: Application directory not found: ${app_path}'; exit 10; }
-
-        test -f '${app_path}/${compose_file}' ||
-            { echo 'ERROR: Compose file not found: ${app_path}/${compose_file}'; exit 11; }
-
-        test -x '${app_path}/${deploy_script}' ||
-            { echo 'ERROR: Deploy script missing or not executable: ${app_path}/${deploy_script}'; exit 12; }
-    "
-
+    
     if ! ssh "${ssh_options[@]}" \
         "${ssh_target}" \
-        "${validation_command}"
+        "test -d '${app_path}'"
     then
-        die "${component}: Remote deployment validation failed."
+        die "${component}: Remote application directory not found: ${app_path}"
     fi
-
+    
+    if ! ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "test -f '${app_path}/${compose_file}'"
+    then
+        die "${component}: Remote Compose file not found: ${app_path}/${compose_file}"
+    fi
+    
+    if ! ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "test -f '${app_path}/${deploy_script}'"
+    then
+        die "${component}: Remote deploy script not found: ${app_path}/${deploy_script}"
+    fi
+    
+    if ! ssh "${ssh_options[@]}" \
+        "${ssh_target}" \
+        "test -x '${app_path}/${deploy_script}'"
+    then
+        die "${component}: Remote deploy script is not executable: ${app_path}/${deploy_script}"
+    fi
+    
     log_success "${component}: Remote deployment files validated."
 
     ###########################################################################
