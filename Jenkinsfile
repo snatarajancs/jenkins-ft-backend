@@ -220,7 +220,7 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: 'harbor-jenkins-pipeline-poc',
+                        credentialsId: 'harbor-jenkins-ft-backend',
                         usernameVariable: 'REGISTRY_USERNAME',
                         passwordVariable: 'REGISTRY_PASSWORD'
                     )
