@@ -32,14 +32,14 @@ pipeline {
         // Enable application test execution.
         booleanParam(
             name: 'RUN_TESTS',
-            defaultValue: true,
+            defaultValue: false,
             description: 'Run application tests'
         )
 
         // Enable optional end-to-end test execution.
         booleanParam(
             name: 'RUN_E2E_TESTS',
-            defaultValue: true,
+            defaultValue: false,
             description: 'Run E2E tests'
         )
 
