@@ -9,16 +9,12 @@
 
 set -Eeuo pipefail
 
-###############################################################################
-# Public Functions
-###############################################################################
-
 deployment_compose() {
 
     local component="$1"
 
     ###########################################################################
-    # Variables
+    # Configuration
     ###########################################################################
 
     local profile
@@ -38,6 +34,9 @@ deployment_compose() {
     local health_check_enabled
     local health_timeout
 
+    local profile_health_check_enabled
+    local profile_health_timeout
+
     local repository
     local tag
     local image_ref
@@ -51,7 +50,7 @@ deployment_compose() {
     require_command yq
 
     ###########################################################################
-    # Required Jenkins credentials/files
+    # Required environment variables
     ###########################################################################
 
     : "${DEPLOY_SSH_USER:?DEPLOY_SSH_USER must be supplied by Jenkins}"
@@ -60,6 +59,10 @@ deployment_compose() {
 
     : "${REGISTRY_USERNAME:?REGISTRY_USERNAME must be supplied by Jenkins}"
     : "${REGISTRY_PASSWORD:?REGISTRY_PASSWORD must be supplied by Jenkins}"
+
+    ###########################################################################
+    # Required files
+    ###########################################################################
 
     require_file "${DEPLOY_SSH_KEY}"
     require_file "${KNOWN_HOSTS_FILE}"
@@ -88,6 +91,7 @@ deployment_compose() {
           "${profile}" == "null" ]]; then
 
         die "${component}: Deployment profile is not available."
+
     fi
 
     profile_file="${JENKINS_DIR}/config/profiles/${profile}.yaml"
@@ -95,32 +99,31 @@ deployment_compose() {
     require_file "${profile_file}"
 
     ###########################################################################
-    # Resolve deployment configuration
+    # Resolve target configuration
     ###########################################################################
 
     host="$(
-        yq -er '.target.host' \
-            "${profile_file}"
+        yq -er '.target.host' "${profile_file}"
     )" || die "${component}: Missing target.host."
 
     port="$(
-        yq -er '.target.port // 22' \
-            "${profile_file}"
+        yq -er '.target.port // 22' "${profile_file}"
     )" || die "${component}: Invalid target.port."
 
+    ###########################################################################
+    # Resolve application configuration
+    ###########################################################################
+
     app_path="$(
-        yq -er '.application.path' \
-            "${profile_file}"
+        yq -er '.application.path' "${profile_file}"
     )" || die "${component}: Missing application.path."
 
     compose_file="$(
-        yq -er '.application.compose_file' \
-            "${profile_file}"
+        yq -er '.application.compose_file' "${profile_file}"
     )" || die "${component}: Missing application.compose_file."
 
     deploy_script="$(
-        yq -er '.application.deploy_script' \
-            "${profile_file}"
+        yq -er '.application.deploy_script' "${profile_file}"
     )" || die "${component}: Missing application.deploy_script."
 
     ###########################################################################
@@ -128,17 +131,15 @@ deployment_compose() {
     ###########################################################################
 
     registry_url="$(
-        yq -er '.registry.url' \
-            "${profile_file}"
+        yq -er '.registry.url' "${profile_file}"
     )" || die "${component}: Missing registry.url."
 
     registry_namespace="$(
-        yq -er '.registry.namespace' \
-            "${profile_file}"
+        yq -er '.registry.namespace' "${profile_file}"
     )" || die "${component}: Missing registry.namespace."
 
     ###########################################################################
-    # Resolve health-check defaults from project.json
+    # Resolve project-level health-check defaults
     ###########################################################################
 
     health_check_enabled="$(
@@ -154,49 +155,72 @@ deployment_compose() {
     )" || die "${component}: Invalid project health_check.timeout."
 
     ###########################################################################
-    # Apply environment-specific overrides
+    # Resolve optional environment-level health-check override
+    #
+    # IMPORTANT:
+    # Do not use yq -e for this check because false is a valid value and
+    # yq -e returns a non-zero status for false.
     ###########################################################################
 
-    if yq -e '.health_check.enabled != null' \
-        "${profile_file}" >/dev/null 2>&1
-    then
+    profile_health_check_enabled="$(
+        yq -r '.health_check.enabled // empty' "${profile_file}"
+    )" || die "${component}: Failed to read profile health_check.enabled."
 
-        health_check_enabled="$(
-            yq -er '.health_check.enabled' \
-                "${profile_file}"
-        )" || die "${component}: Invalid profile health_check.enabled."
+    if [[ -n "${profile_health_check_enabled}" ]]; then
+
+        case "${profile_health_check_enabled}" in
+            true|false)
+                health_check_enabled="${profile_health_check_enabled}"
+                ;;
+            *)
+                die "${component}: Invalid profile health_check.enabled."
+                ;;
+        esac
 
     fi
 
-    if yq -e '.health_check.timeout != null' \
-        "${profile_file}" >/dev/null 2>&1
-    then
+    ###########################################################################
+    # Resolve optional environment-level health-check timeout override
+    ###########################################################################
 
-        health_timeout="$(
-            yq -er '.health_check.timeout' \
-                "${profile_file}"
-        )" || die "${component}: Invalid profile health_check.timeout."
+    profile_health_timeout="$(
+        yq -r '.health_check.timeout // empty' "${profile_file}"
+    )" || die "${component}: Failed to read profile health_check.timeout."
+
+    if [[ -n "${profile_health_timeout}" ]]; then
+
+        if ! [[ "${profile_health_timeout}" =~ ^[0-9]+$ ]] ||
+           (( profile_health_timeout <= 0 )); then
+
+            die "${component}: Invalid profile health_check.timeout."
+
+        fi
+
+        health_timeout="${profile_health_timeout}"
 
     fi
 
     ###########################################################################
-    # Validate health-check values
+    # Validate effective health-check configuration
     ###########################################################################
 
     case "${health_check_enabled}" in
         true|false)
             ;;
         *)
-            die "${component}: health_check.enabled must be true or false."
+            die "${component}: Effective health_check.enabled must be true or false."
             ;;
     esac
 
-    [[ "${health_timeout}" =~ ^[0-9]+$ ]] &&
-        (( health_timeout > 0 )) ||
-        die "${component}: health_check.timeout must be a positive integer."
+    if ! [[ "${health_timeout}" =~ ^[0-9]+$ ]] ||
+       (( health_timeout <= 0 )); then
+
+        die "${component}: Effective health_check.timeout must be a positive integer."
+
+    fi
 
     ###########################################################################
-    # Resolve runtime Docker image
+    # Resolve runtime image
     ###########################################################################
 
     if ! runtime_has_image "${component}"; then
@@ -222,7 +246,7 @@ deployment_compose() {
         die "${component}: Image tag is empty."
 
     ###########################################################################
-    # Build exact Docker image reference
+    # Build image reference
     ###########################################################################
 
     image_ref="${registry_url}/${registry_namespace}/${repository}:${tag}"
