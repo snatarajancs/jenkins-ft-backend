@@ -163,10 +163,11 @@ deployment_compose() {
     ###########################################################################
 
     profile_health_check_enabled="$(
-        yq -r '.health_check.enabled // empty' "${profile_file}"
+        yq -r '.health_check.enabled' \
+            "${profile_file}"
     )" || die "${component}: Failed to read profile health_check.enabled."
 
-    if [[ -n "${profile_health_check_enabled}" ]]; then
+    if [[ "${profile_health_check_enabled}" != "null" ]]; then
 
         case "${profile_health_check_enabled}" in
             true|false)
@@ -178,7 +179,7 @@ deployment_compose() {
         esac
 
     fi
-
+    
     ###########################################################################
     # Resolve optional environment-level health-check timeout override
     ###########################################################################
