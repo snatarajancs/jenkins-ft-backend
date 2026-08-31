@@ -19,4 +19,4 @@ application:
 
 
 health_check:
-  enabled: false
+  enabled: true
