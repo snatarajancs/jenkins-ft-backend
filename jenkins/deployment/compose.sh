@@ -5,16 +5,30 @@
 # File        : compose.sh
 # Description : Docker Compose deployment implementation.
 #
+# Responsibilities
+#   - Validate Compose deployment configuration
+#   - Read environment profile
+#   - Resolve project-level defaults
+#   - Apply environment-specific overrides
+#   - Read built image metadata
+#   - Build the exact registry image reference
+#   - Validate remote deployment requirements
+#   - Execute remote deployment script
+#
 ###############################################################################
 
 set -Eeuo pipefail
+
+###############################################################################
+# Public Functions
+###############################################################################
 
 deployment_compose() {
 
     local component="$1"
 
     ###########################################################################
-    # Configuration
+    # Variables
     ###########################################################################
 
     local profile
@@ -50,7 +64,7 @@ deployment_compose() {
     require_command yq
 
     ###########################################################################
-    # Required environment variables
+    # Required Jenkins variables
     ###########################################################################
 
     : "${DEPLOY_SSH_USER:?DEPLOY_SSH_USER must be supplied by Jenkins}"
@@ -77,21 +91,18 @@ deployment_compose() {
     require_file "${project_config}"
 
     ###########################################################################
-    # Resolve deployment profile
+    # Resolve active profile
     ###########################################################################
 
     profile="$(
-        json_get \
-            "${PIPELINE_CONTEXT_FILE}" \
-            ".profile"
+        json_get "${PIPELINE_CONTEXT_FILE}" ".profile"
     )" || die "${component}: Failed to extract deployment profile."
 
     if [[ -z "${profile}" ||
-          "${profile}" == "none" ||
-          "${profile}" == "null" ]]; then
+         "${profile}" == "none" ||
+         "${profile}" == "null" ]]; then
 
         die "${component}: Deployment profile is not available."
-
     fi
 
     profile_file="${JENKINS_DIR}/config/profiles/${profile}.yaml"
@@ -144,27 +155,30 @@ deployment_compose() {
 
     health_check_enabled="$(
         jq -er \
-            ".components.${component}.health_check.enabled // true" \
-            "${project_config}"
-    )" || die "${component}: Invalid project health_check.enabled."
+            ".components.${component}.health_check.enabled" "${project_config}"
+    )" || die "${component}: Missing project health_check.enabled."
 
     health_timeout="$(
         jq -er \
-            ".components.${component}.health_check.timeout // 180" \
-            "${project_config}"
-    )" || die "${component}: Invalid project health_check.timeout."
-
+            ".components.${component}.health_check.timeout" "${project_config}"
+    )" || die "${component}: Missing project health_check.timeout."
     ###########################################################################
-    # Resolve optional environment-level health-check override
+    # Apply optional profile health-check override
     #
-    # IMPORTANT:
-    # Do not use yq -e for this check because false is a valid value and
-    # yq -e returns a non-zero status for false.
+    # Do not use:
+    #   yq -e
+    #
+    # because boolean false can produce a non-zero exit status.
+    #
+    # Do not use:
+    #   // empty
+    #
+    # because the Jenkins yq parser used by this environment does not
+    # accept the 'empty' expression.
     ###########################################################################
 
     profile_health_check_enabled="$(
-        yq -r '.health_check.enabled' \
-            "${profile_file}"
+        yq -r '.health_check.enabled' "${profile_file}"
     )" || die "${component}: Failed to read profile health_check.enabled."
 
     if [[ "${profile_health_check_enabled}" != "null" ]]; then
@@ -179,16 +193,16 @@ deployment_compose() {
         esac
 
     fi
-    
+
     ###########################################################################
-    # Resolve optional environment-level health-check timeout override
+    # Apply optional profile timeout override
     ###########################################################################
 
     profile_health_timeout="$(
-        yq -r '.health_check.timeout // empty' "${profile_file}"
+        yq -r '.health_check.timeout' "${profile_file}"
     )" || die "${component}: Failed to read profile health_check.timeout."
 
-    if [[ -n "${profile_health_timeout}" ]]; then
+    if [[ "${profile_health_timeout}" != "null" ]]; then
 
         if ! [[ "${profile_health_timeout}" =~ ^[0-9]+$ ]] ||
            (( profile_health_timeout <= 0 )); then
@@ -217,11 +231,10 @@ deployment_compose() {
        (( health_timeout <= 0 )); then
 
         die "${component}: Effective health_check.timeout must be a positive integer."
-
     fi
 
     ###########################################################################
-    # Resolve runtime image
+    # Resolve runtime Docker image
     ###########################################################################
 
     if ! runtime_has_image "${component}"; then
@@ -229,14 +242,12 @@ deployment_compose() {
     fi
 
     repository="$(
-        runtime_get_image \
-            "${component}" \
+        runtime_get_image "${component}" \
             repository
     )" || die "${component}: Failed to resolve image repository."
 
     tag="$(
-        runtime_get_image \
-            "${component}" \
+        runtime_get_image "${component}" \
             tag
     )" || die "${component}: Failed to resolve image tag."
 
@@ -247,7 +258,7 @@ deployment_compose() {
         die "${component}: Image tag is empty."
 
     ###########################################################################
-    # Build image reference
+    # Build exact image reference
     ###########################################################################
 
     image_ref="${registry_url}/${registry_namespace}/${repository}:${tag}"
@@ -316,7 +327,7 @@ deployment_compose() {
     ###########################################################################
     # Execute remote deployment
     ###########################################################################
-
+    
     log_info "Executing remote deployment..."
 
     local remote_command
