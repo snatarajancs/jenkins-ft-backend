@@ -5,15 +5,6 @@
 # File        : compose.sh
 # Description : Docker Compose deployment implementation.
 #
-# Responsibilities
-#   - Validate Compose deployment configuration
-#   - Read environment profile
-#   - Read built image metadata
-#   - Build the exact registry image reference
-#   - Validate remote deployment requirements
-#   - Execute remote deployment script
-#   - Report deployment failures clearly
-#
 ###############################################################################
 
 set -Eeuo pipefail
@@ -32,6 +23,7 @@ deployment_compose() {
 
     local profile
     local profile_file
+    local project_config
 
     local host
     local port
@@ -42,6 +34,9 @@ deployment_compose() {
 
     local registry_url
     local registry_namespace
+
+    local health_check_enabled
+    local health_timeout
 
     local repository
     local tag
@@ -69,6 +64,14 @@ deployment_compose() {
     require_file "${DEPLOY_SSH_KEY}"
     require_file "${KNOWN_HOSTS_FILE}"
     require_file "${PIPELINE_CONTEXT_FILE}"
+
+    ###########################################################################
+    # Project configuration
+    ###########################################################################
+
+    project_config="${JENKINS_DIR}/config/project.json"
+
+    require_file "${project_config}"
 
     ###########################################################################
     # Resolve deployment profile
@@ -103,7 +106,7 @@ deployment_compose() {
     port="$(
         yq -er '.target.port // 22' \
             "${profile_file}"
-    )" || die "${component}: Missing target.port."
+    )" || die "${component}: Invalid target.port."
 
     app_path="$(
         yq -er '.application.path' \
@@ -133,6 +136,64 @@ deployment_compose() {
         yq -er '.registry.namespace' \
             "${profile_file}"
     )" || die "${component}: Missing registry.namespace."
+
+    ###########################################################################
+    # Resolve health-check defaults from project.json
+    ###########################################################################
+
+    health_check_enabled="$(
+        jq -er \
+            ".components.${component}.health_check.enabled // true" \
+            "${project_config}"
+    )" || die "${component}: Invalid project health_check.enabled."
+
+    health_timeout="$(
+        jq -er \
+            ".components.${component}.health_check.timeout // 180" \
+            "${project_config}"
+    )" || die "${component}: Invalid project health_check.timeout."
+
+    ###########################################################################
+    # Apply environment-specific overrides
+    ###########################################################################
+
+    if yq -e '.health_check.enabled != null' \
+        "${profile_file}" >/dev/null 2>&1
+    then
+
+        health_check_enabled="$(
+            yq -er '.health_check.enabled' \
+                "${profile_file}"
+        )" || die "${component}: Invalid profile health_check.enabled."
+
+    fi
+
+    if yq -e '.health_check.timeout != null' \
+        "${profile_file}" >/dev/null 2>&1
+    then
+
+        health_timeout="$(
+            yq -er '.health_check.timeout' \
+                "${profile_file}"
+        )" || die "${component}: Invalid profile health_check.timeout."
+
+    fi
+
+    ###########################################################################
+    # Validate health-check values
+    ###########################################################################
+
+    case "${health_check_enabled}" in
+        true|false)
+            ;;
+        *)
+            die "${component}: health_check.enabled must be true or false."
+            ;;
+    esac
+
+    [[ "${health_timeout}" =~ ^[0-9]+$ ]] &&
+        (( health_timeout > 0 )) ||
+        die "${component}: health_check.timeout must be a positive integer."
 
     ###########################################################################
     # Resolve runtime Docker image
@@ -171,13 +232,15 @@ deployment_compose() {
     ###########################################################################
 
     log_info "Deploying '${component}'..."
-    log_info "Profile    : ${profile}"
-    log_info "Host       : ${host}"
-    log_info "Port       : ${port}"
-    log_info "App Path   : ${app_path}"
-    log_info "Compose    : ${compose_file}"
-    log_info "Script     : ${deploy_script}"
-    log_info "Image      : ${image_ref}"
+    log_info "Profile            : ${profile}"
+    log_info "Host               : ${host}"
+    log_info "Port               : ${port}"
+    log_info "App Path           : ${app_path}"
+    log_info "Compose            : ${compose_file}"
+    log_info "Deploy Script      : ${deploy_script}"
+    log_info "Image              : ${image_ref}"
+    log_info "Health Check       : ${health_check_enabled}"
+    log_info "Health Timeout     : ${health_timeout}s"
 
     ###########################################################################
     # SSH configuration
@@ -205,31 +268,21 @@ deployment_compose() {
 
     local validation_command
 
-    validation_command="
-        test -d '${app_path}' ||
-            {
-                echo 'ERROR: Application directory not found: ${app_path}'
-                exit 10
-            }
-
-        test -f '${app_path}/${compose_file}' ||
-            {
-                echo 'ERROR: Compose file not found: ${app_path}/${compose_file}'
-                exit 11
-            }
-
-        test -x '${app_path}/${deploy_script}' ||
-            {
-                echo 'ERROR: Deploy script missing or not executable: ${app_path}/${deploy_script}'
-                exit 12
-            }
-    "
+    printf -v validation_command \
+        'test -d %q &&
+         test -f %q &&
+         test -x %q' \
+        "${app_path}" \
+        "${app_path}/${compose_file}" \
+        "${app_path}/${deploy_script}"
 
     if ! ssh "${ssh_options[@]}" \
         "${ssh_target}" \
         "${validation_command}"
     then
+
         die "${component}: Remote deployment validation failed."
+
     fi
 
     log_success \
@@ -237,15 +290,6 @@ deployment_compose() {
 
     ###########################################################################
     # Execute remote deployment
-    #
-    # deploy.sh on the application server handles:
-    #   - Harbor login
-    #   - Docker image pull
-    #   - Docker Compose deployment
-    #   - Health verification
-    #   - Rollback on failure
-    #   - Harbor logout
-    #
     ###########################################################################
 
     log_info "Executing remote deployment..."
@@ -253,10 +297,12 @@ deployment_compose() {
     local remote_command
 
     printf -v remote_command \
-        "cd %q && IMAGE=%q REGISTRY_URL=%q ./%q" \
+        "cd %q && IMAGE=%q REGISTRY_URL=%q HEALTH_CHECK_ENABLED=%q HEALTH_TIMEOUT=%q ./%q" \
         "${app_path}" \
         "${image_ref}" \
         "${registry_url}" \
+        "${health_check_enabled}" \
+        "${health_timeout}" \
         "${deploy_script}"
 
     if ! {
@@ -266,7 +312,9 @@ deployment_compose() {
             "${ssh_target}" \
             "${remote_command}"
     then
+
         die "${component}: Remote deployment failed."
+
     fi
 
     ###########################################################################

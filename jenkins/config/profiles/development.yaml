@@ -20,5 +20,3 @@ application:
 
 health_check:
   enabled: false
-  target: compose
-  timeout: 180

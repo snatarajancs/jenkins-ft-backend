@@ -16,10 +16,6 @@ application:
   compose_file: compose.yml
   deploy_script: deploy/deploy.sh
   rollback_script: deploy/rollback.sh
-  health_check_script: deploy/health-check.sh
-
 
 health_check:
   enabled: true
-  target: compose
-  timeout: 180
